@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="Check how saturated an open-source bounty is before you waste your time. AI-spam aware." />
+<title>BountyScout — is this bounty worth your time?</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-card: #131320;
+    --bg-input: #1a1a2a;
+    --fg: #e8e8f0;
+    --fg-dim: #a0a0b8;
+    --accent: #7c5cff;
+    --accent-hover: #9277ff;
+    --border: #2a2a40;
+    --green: #4ade80;
+    --yellow: #facc15;
+    --red: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    min-height: 100vh;
+    padding: 32px 16px;
+    line-height: 1.5;
+  }
+  .container { max-width: 760px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 32px; }
+  h1 {
+    font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent), #ff77c7);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  h1 .emoji { -webkit-text-fill-color: initial; }
+  .tagline { color: var(--fg-dim); margin-top: 8px; font-size: 1.05rem; }
+  .form-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; margin-bottom: 24px;
+  }
+  label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.95rem; color: var(--fg-dim); }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 12px 14px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--fg); border-radius: 8px; font-size: 1rem;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  input[type=text]:focus, input[type=password]:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .input-row { display: flex; gap: 8px; align-items: stretch; }
+  .input-row input { flex: 1; }
+  button {
+    background: var(--accent); color: white; border: none;
+    padding: 12px 22px; border-radius: 8px; font-weight: 600;
+    cursor: pointer; font-size: 1rem; white-space: nowrap;
+    transition: background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .token-row { margin-top: 14px; }
+  .token-row label { font-size: 0.85rem; }
+  .token-row .hint { font-size: 0.8rem; color: var(--fg-dim); margin-top: 4px; }
+  .token-row .hint a { color: var(--accent); }
+  details summary {
+    cursor: pointer; color: var(--fg-dim); font-size: 0.85rem;
+    margin-top: 8px; user-select: none;
+  }
+  details[open] summary { margin-bottom: 12px; }
+  .result { margin-top: 24px; }
+  .score-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 28px; text-align: center;
+    margin-bottom: 20px;
+  }
+  .score-card.low { border-color: var(--green); }
+  .score-card.medium { border-color: var(--yellow); }
+  .score-card.high { border-color: var(--red); }
+  .score-emoji { font-size: 3rem; line-height: 1; margin-bottom: 8px; }
+  .score-label { font-size: 1.6rem; font-weight: 800; }
+  .score-label.low { color: var(--green); }
+  .score-label.medium { color: var(--yellow); }
+  .score-label.high { color: var(--red); }
+  .score-rec { color: var(--fg-dim); margin-top: 6px; }
+  .issue-title { font-weight: 600; margin-bottom: 4px; }
+  .issue-meta { color: var(--fg-dim); font-size: 0.9rem; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; text-align: center;
+  }
+  .stat-num { font-size: 1.8rem; font-weight: 700; }
+  .stat-label { color: var(--fg-dim); font-size: 0.85rem; margin-top: 4px; }
+  .activity {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px;
+  }
+  .activity h3 { font-size: 1rem; margin-bottom: 12px; color: var(--fg-dim); font-weight: 600; }
+  .activity-item {
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    font-size: 0.9rem; display: flex; gap: 10px; align-items: baseline;
+  }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-item .kind {
+    flex: 0 0 auto; font-size: 0.75rem; padding: 2px 8px;
+    border-radius: 4px; font-weight: 600;
+  }
+  .activity-item .kind.attempt { background: rgba(250, 204, 21, 0.15); color: var(--yellow); }
+  .activity-item .kind.pr { background: rgba(124, 92, 255, 0.15); color: var(--accent); }
+  .activity-item .who { font-family: ui-monospace, monospace; color: var(--fg); }
+  .activity-item .when { color: var(--fg-dim); flex: 0 0 auto; margin-left: auto; font-size: 0.8rem; }
+  .activity-item a { color: var(--fg); text-decoration: none; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .activity-item a:hover { color: var(--accent); }
+  .ai-warning {
+    background: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    border-radius: 10px; padding: 14px; margin-bottom: 20px;
+    font-size: 0.9rem;
+  }
+  .ai-warning strong { color: var(--red); }
+  .error {
+    background: rgba(248, 113, 113, 0.08); border: 1px solid var(--red);
+    color: var(--red); padding: 14px; border-radius: 10px;
+  }
+  .examples { margin-top: 12px; font-size: 0.85rem; color: var(--fg-dim); }
+  .examples button {
+    background: transparent; color: var(--accent); padding: 2px 8px;
+    font-size: 0.85rem; font-family: ui-monospace, monospace;
+    border: 1px solid var(--border); margin-right: 6px;
+  }
+  .examples button:hover { background: var(--bg-card); }
+  footer {
+    margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
+    text-align: center; color: var(--fg-dim); font-size: 0.9rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  .bmc-btn {
+    display: inline-block; margin: 12px 8px 0;
+    background: #FFDD00; color: #000;
+    padding: 8px 18px; border-radius: 8px;
+    text-decoration: none; font-weight: 700;
+  }
+  .kofi-btn {
+    display: inline-block; margin: 12px 8px 0;
+    background: #29ABE0; color: #fff;
+    padding: 8px 18px; border-radius: 8px;
+    text-decoration: none; font-weight: 700;
+  }
+  .ethics {
+    margin-top: 24px; font-size: 0.85rem; color: var(--fg-dim);
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; line-height: 1.6;
+  }
+  .ethics strong { color: var(--fg); }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.3); border-top-color: white;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1><span class="emoji">🔍</span> BountyScout</h1>
+  <p class="tagline">Before you spend hours on an open-source bounty, check how saturated it is.</p>
+</header>
+
+<div class="form-card">
+  <label for="url">GitHub issue URL</label>
+  <div class="input-row">
+    <input type="text" id="url" placeholder="https://github.com/owner/repo/issues/123" autocomplete="off" />
+    <button id="scan">Scan</button>
+  </div>
+  <div class="examples">
+    Try:
+    <button data-url="https://github.com/tscircuit/circuit-json-to-readable-netlist/issues/4">$5 tscircuit (red)</button>
+    <button data-url="https://github.com/tscircuit/3d-viewer/issues/93">$5 3d-viewer</button>
+    <button data-url="https://github.com/archestra-ai/archestra/issues/4461">$50 archestra</button>
+  </div>
+
+  <details class="token-row">
+    <summary>Using your own GitHub token (optional, raises rate limit 60/hr → 5000/hr)</summary>
+    <label for="token">GitHub Personal Access Token (public_repo scope is enough)</label>
+    <input type="password" id="token" placeholder="ghp_... (stored only in your browser localStorage)" autocomplete="off" />
+    <div class="hint">
+      Don't have one? <a href="https://github.com/settings/tokens/new?scopes=public_repo&description=BountyScout" target="_blank" rel="noopener">Create a token</a>.
+      Token never leaves your browser.
+    </div>
+  </details>
+</div>
+
+<div id="result" class="result"></div>
+
+<div class="ethics">
+  <strong>One ask:</strong> if you're an AI agent operator, please don't run multiple agents on the same bounty issue.
+  Maintainers are real humans drowning in duplicated PRs, which makes them mass-reject everything — including yours.
+  Pick one issue, do it well. The bounty system survives only if it stays mostly fair.
+</div>
+
+<footer>
+  <p>Saw a bug? Have an idea? <a href="https://github.com/phungkaizen" target="_blank" rel="noopener">Ping me on GitHub</a>.</p>
+  <p>If this saved you an hour, a tip helps me keep it ad-free:</p>
+  <a class="bmc-btn" href="https://www.buymeacoffee.com/phungkaizen" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+  <a class="kofi-btn" href="https://ko-fi.com/phungkaizen" target="_blank" rel="noopener">💙 Tip on Ko-fi</a>
+  <p style="margin-top: 16px; font-size: 0.8rem;">Made with care, not farmed. No tracking. No ads.</p>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const urlInput = $("url");
+  const tokenInput = $("token");
+  const scanBtn = $("scan");
+  const resultEl = $("result");
+
+  // Restore token from localStorage
+  const savedToken = localStorage.getItem("bountyscout_token");
+  if (savedToken) tokenInput.value = savedToken;
+  tokenInput.addEventListener("change", () => {
+    if (tokenInput.value) localStorage.setItem("bountyscout_token", tokenInput.value);
+    else localStorage.removeItem("bountyscout_token");
+  });
+
+  // Example buttons
+  document.querySelectorAll(".examples button[data-url]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      urlInput.value = btn.dataset.url;
+      doScan();
+    });
+  });
+
+  scanBtn.addEventListener("click", doScan);
+  urlInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doScan();
+  });
+
+  function parseIssueUrl(url) {
+    const m = url.trim().match(
+      /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/
+    );
+    if (!m) return null;
+    return { owner: m[1], repo: m[2], number: parseInt(m[3], 10) };
+  }
+
+  function gh(endpoint) {
+    const headers = { "Accept": "application/vnd.github+json" };
+    const token = tokenInput.value.trim();
+    if (token) headers["Authorization"] = "Bearer " + token;
+    return fetch("https://api.github.com" + endpoint, { headers }).then((r) => {
+      if (!r.ok) {
+        return r.json().then((b) => {
+          throw new Error((b && b.message) || r.status + " " + r.statusText);
+        });
+      }
+      return r.json();
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;",
+      "\"": "&quot;", "'": "&#039;",
+    })[c]);
+  }
+
+  function relTime(iso) {
+    const ms = Date.now() - new Date(iso).getTime();
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + "s ago";
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + "m ago";
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + "h ago";
+    const d = Math.floor(h / 24);
+    if (d < 30) return d + "d ago";
+    const mo = Math.floor(d / 30);
+    if (mo < 12) return mo + "mo ago";
+    return Math.floor(mo / 12) + "y ago";
+  }
+
+  function setLoading() {
+    scanBtn.disabled = true;
+    scanBtn.innerHTML = '<span class="spinner"></span>Scanning...';
+    resultEl.innerHTML = "";
+  }
+
+  function clearLoading() {
+    scanBtn.disabled = false;
+    scanBtn.textContent = "Scan";
+  }
+
+  function showError(msg) {
+    clearLoading();
+    resultEl.innerHTML = '<div class="error">' + escapeHtml(msg) + "</div>";
+  }
+
+  function categorize(attempts, openClaimPRs) {
+    const total = attempts + openClaimPRs * 1.5;
+    if (total <= 2) return "low";
+    if (total <= 7) return "medium";
+    return "high";
+  }
+
+  function recText(cat, attempts, prs) {
+    if (cat === "low") return "Low saturation — good odds. Go for it if you can do quality work.";
+    if (cat === "medium") return "Moderate competition. Your PR needs to be clearly the best to win.";
+    return "Heavily contested. " + attempts + " /attempt comments and " + prs + " open claim-PRs. Maintainer is likely overwhelmed; consider a different issue.";
+  }
+
+  async function doScan() {
+    const url = urlInput.value.trim();
+    const parsed = parseIssueUrl(url);
+    if (!parsed) {
+      showError("Please paste a GitHub issue URL like https://github.com/owner/repo/issues/123");
+      return;
+    }
+    setLoading();
+    try {
+      const { owner, repo, number } = parsed;
+
+      const issue = await gh(
+        "/repos/" + owner + "/" + repo + "/issues/" + number
+      );
+      const labels = (issue.labels || []).map((l) => l.name);
+      const isBounty = labels.some((n) => /bounty/i.test(n));
+      const isRewarded = labels.some((n) => /rewarded/i.test(n));
+
+      // Fetch all issue comments (paginate)
+      let comments = [];
+      for (let page = 1; page <= 5; page++) {
+        const batch = await gh(
+          "/repos/" + owner + "/" + repo + "/issues/" + number +
+          "/comments?per_page=100&page=" + page
+        );
+        comments = comments.concat(batch);
+        if (batch.length < 100) break;
+      }
+
+      const attempts = comments.filter((c) =>
+        /\/attempt\b/i.test(c.body || "") &&
+        c.user.login !== "algora-pbc[bot]"
+      );
+      const attemptUsers = Array.from(new Set(attempts.map((c) => c.user.login)));
+
+      const botSubmissions = comments.filter((c) =>
+        c.user.login === "algora-pbc[bot]" &&
+        /submitted a \[?pull request/i.test(c.body || "")
+      );
+
+      // Search for open PRs claiming this issue
+      const search = await gh(
+        "/search/issues?q=" + encodeURIComponent(
+          'repo:' + owner + '/' + repo + ' is:pr is:open "claim #' + number + '"'
+        )
+      );
+      const openClaimPRs = (search.items || []).filter((p) => p.state === "open");
+
+      const cat = categorize(attemptUsers.length, openClaimPRs.length);
+
+      // Detect AI-spam patterns
+      const aiPatterns = [
+        "VTT Sovereign Engine", "CashClaw", "autonomous agent",
+        "automated bounty verification", "Throttled Submission",
+        "[codex]", "automated PR by", "[devin]",
+        "## Summary\n- ", "## Verification\n- ",
+      ];
+      const aiHits = new Set();
+      openClaimPRs.forEach((p) => {
+        const t = ((p.body || "") + " " + (p.title || "")).toLowerCase();
+        if (aiPatterns.some((pat) => t.includes(pat.toLowerCase()))) aiHits.add(p.number);
+      });
+
+      // Multi-PR-per-user is a strong botting signal
+      const prsByUser = {};
+      openClaimPRs.forEach((p) => {
+        const u = p.user.login;
+        (prsByUser[u] = prsByUser[u] || []).push(p);
+      });
+      const multiPRUsers = Object.entries(prsByUser).filter(([, ps]) => ps.length >= 2);
+      multiPRUsers.forEach(([, ps]) => ps.forEach((p) => aiHits.add(p.number)));
+
+      // Look at our own commenter scan: same user with multiple /attempt comments
+      const attemptCount = {};
+      attempts.forEach((c) => {
+        attemptCount[c.user.login] = (attemptCount[c.user.login] || 0) + 1;
+      });
+      const spamAttempters = Object.entries(attemptCount).filter(([, n]) => n >= 3).map(([u]) => u);
+
+      renderResult({
+        owner, repo, number, issue, isBounty, isRewarded,
+        attempts: attemptUsers.length, openClaimPRs, botSubmissions,
+        aiHits: aiHits.size, multiPRUsers, spamAttempters, cat,
+      });
+      clearLoading();
+    } catch (e) {
+      showError("Failed to scan: " + e.message);
+    }
+  }
+
+  function renderResult(data) {
+    const { owner, repo, number, issue, isBounty, isRewarded,
+            attempts, openClaimPRs, botSubmissions, aiHits,
+            multiPRUsers, spamAttempters, cat } = data;
+
+    const emoji = cat === "low" ? "🟢" : cat === "medium" ? "🟡" : "🔴";
+    const label = cat === "low" ? "LOW SATURATION" :
+                  cat === "medium" ? "MEDIUM" : "HIGH SATURATION";
+
+    let html = "";
+
+    if (!isBounty) {
+      html += '<div class="ai-warning"><strong>Note:</strong> this issue has no "Bounty" label — it may not actually have a bounty attached.</div>';
+    }
+    if (isRewarded) {
+      html += '<div class="ai-warning"><strong>Already rewarded!</strong> The bounty on this issue has been paid out. Any further attempts are wasted.</div>';
+    }
+
+    html += '<div class="score-card ' + cat + '">' +
+      '<div class="score-emoji">' + emoji + '</div>' +
+      '<div class="score-label ' + cat + '">' + label + '</div>' +
+      '<div class="score-rec">' + escapeHtml(recText(cat, attempts, openClaimPRs.length)) + '</div>' +
+      '<div style="margin-top:14px;">' +
+      '<div class="issue-title">' + escapeHtml(issue.title) + '</div>' +
+      '<div class="issue-meta">' + owner + "/" + repo + " #" + number + ' &middot; ' + escapeHtml(issue.state) + '</div>' +
+      '</div></div>';
+
+    if (aiHits > 0) {
+      html += '<div class="ai-warning"><strong>AI-spam detected:</strong> ' +
+        aiHits + ' of the ' + openClaimPRs.length +
+        ' open claim-PRs look auto-generated (matching Devin/Codex/VTT/CashClaw signatures, AI-template summaries, or users with multiple PRs on the same issue). ' +
+        "Maintainers tend to mass-reject these — and yours too if it looks similar.</div>";
+    }
+    if (multiPRUsers.length > 0) {
+      const names = multiPRUsers.map(([u, ps]) => "@" + u + " (" + ps.length + ")").join(", ");
+      html += '<div class="ai-warning"><strong>Multi-PR users:</strong> ' + escapeHtml(names) +
+        ' have multiple open claim-PRs on this issue — a strong botting signal.</div>';
+    }
+    if (spamAttempters.length > 0) {
+      html += '<div class="ai-warning"><strong>Repeat /attempt spammers:</strong> ' +
+        escapeHtml(spamAttempters.map((u) => "@" + u).join(", ")) +
+        ' posted three or more /attempt comments on this single issue.</div>';
+    }
+
+    html += '<div class="stats">' +
+      '<div class="stat"><div class="stat-num">' + attempts + '</div><div class="stat-label">/attempt users</div></div>' +
+      '<div class="stat"><div class="stat-num">' + openClaimPRs.length + '</div><div class="stat-label">open claim-PRs</div></div>' +
+      '<div class="stat"><div class="stat-num">' + botSubmissions.length + '</div><div class="stat-label">bot-tracked submits</div></div>' +
+      '<div class="stat"><div class="stat-num">' + issue.comments + '</div><div class="stat-label">total comments</div></div>' +
+      '</div>';
+
+    if (openClaimPRs.length > 0) {
+      html += '<div class="activity"><h3>Open PRs claiming this issue</h3>';
+      openClaimPRs.slice(0, 10).forEach((p) => {
+        html += '<div class="activity-item">' +
+          '<span class="kind pr">PR #' + p.number + '</span>' +
+          '<a href="' + escapeHtml(p.html_url) + '" target="_blank" rel="noopener">' + escapeHtml(p.title) + '</a>' +
+          '<span class="who">@' + escapeHtml(p.user.login) + '</span>' +
+          '<span class="when">' + relTime(p.created_at) + '</span>' +
+          '</div>';
+      });
+      html += "</div>";
+    }
+
+    resultEl.innerHTML = html;
+  }
+})();
+</script>
+</body>
+</html>
