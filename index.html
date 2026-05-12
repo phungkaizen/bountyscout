@@ -164,6 +164,36 @@
     vertical-align: middle; margin-right: 6px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* v2: badges, platform indicator, assignee */
+  .badge-row {
+    display: flex; gap: 8px; justify-content: center;
+    flex-wrap: wrap; margin-top: 14px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 12px;
+    font-size: 0.82rem; color: var(--fg-dim);
+    text-decoration: none; transition: all 0.15s;
+  }
+  .badge:hover { color: var(--fg); border-color: var(--accent); }
+  .badge.platform-algora { color: #ff6b35; border-color: rgba(255,107,53,0.35); }
+  .badge.platform-polar { color: #0062ff; border-color: rgba(0,98,255,0.35); }
+  .badge.platform-other { color: var(--fg-dim); }
+  .score-card.assigned { border-color: var(--accent); }
+  .score-label.assigned { color: var(--accent); }
+  .assignee-block {
+    display: flex; align-items: center; gap: 10px;
+    justify-content: center; margin-top: 10px;
+    color: var(--fg-dim); font-size: 0.92rem;
+  }
+  .assignee-block img {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid var(--border);
+  }
+  .assignee-block a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .platform-row { margin-top: 10px; display: flex; justify-content: center; gap: 6px; }
 </style>
 </head>
 <body>
@@ -172,6 +202,10 @@
 <header>
   <h1><span class="emoji">🔍</span> BountyScout</h1>
   <p class="tagline">Before you spend hours on an open-source bounty, check how saturated it is.</p>
+  <div class="badge-row">
+    <a class="badge" href="https://github.com/phungkaizen/bountyscout" target="_blank" rel="noopener">⭐ Star on GitHub</a>
+    <span class="badge">v2 · Algora + Polar + assigned-detection</span>
+  </div>
 </header>
 
 <div class="form-card">
@@ -307,7 +341,8 @@
     resultEl.innerHTML = '<div class="error">' + escapeHtml(msg) + "</div>";
   }
 
-  function categorize(attempts, openClaimPRs) {
+  function categorize(attempts, openClaimPRs, isAssigned) {
+    if (isAssigned) return "assigned";
     const total = attempts + openClaimPRs * 1.5;
     if (total <= 2) return "low";
     if (total <= 7) return "medium";
@@ -315,9 +350,25 @@
   }
 
   function recText(cat, attempts, prs) {
+    if (cat === "assigned") return "This issue is already officially assigned to someone. Any unsolicited PR will almost certainly be closed — pick a different bounty.";
     if (cat === "low") return "Low saturation — good odds. Go for it if you can do quality work.";
     if (cat === "medium") return "Moderate competition. Your PR needs to be clearly the best to win.";
     return "Heavily contested. " + attempts + " /attempt comments and " + prs + " open claim-PRs. Maintainer is likely overwhelmed; consider a different issue.";
+  }
+
+  // Detect which bounty platform the issue belongs to
+  function detectPlatform(issue, comments) {
+    const labels = (issue.labels || []).map((l) => l.name.toLowerCase());
+    const allText = (issue.body || "") + " " +
+      comments.slice(0, 30).map((c) => c.user.login + " " + (c.body || "")).join(" ");
+    if (labels.some((l) => l === "\ud83d\udcb8 bounty" || l === "bounty" || /algora/i.test(l)) ||
+        /algora-pbc\[bot\]/i.test(allText) || /algora\.io/i.test(allText)) {
+      return "algora";
+    }
+    if (/polar\.sh/i.test(allText) || labels.some((l) => /polar/i.test(l))) {
+      return "polar";
+    }
+    return "other";
   }
 
   async function doScan() {
@@ -337,6 +388,8 @@
       const labels = (issue.labels || []).map((l) => l.name);
       const isBounty = labels.some((n) => /bounty/i.test(n));
       const isRewarded = labels.some((n) => /rewarded/i.test(n));
+      const assignees = issue.assignees || (issue.assignee ? [issue.assignee] : []);
+      const isAssigned = assignees.length > 0;
 
       // Fetch all issue comments (paginate)
       let comments = [];
@@ -368,7 +421,8 @@
       );
       const openClaimPRs = (search.items || []).filter((p) => p.state === "open");
 
-      const cat = categorize(attemptUsers.length, openClaimPRs.length);
+      const cat = categorize(attemptUsers.length, openClaimPRs.length, isAssigned);
+      const platform = detectPlatform(issue, comments);
 
       // Detect AI-spam patterns
       const aiPatterns = [
@@ -403,6 +457,7 @@
         owner, repo, number, issue, isBounty, isRewarded,
         attempts: attemptUsers.length, openClaimPRs, botSubmissions,
         aiHits: aiHits.size, multiPRUsers, spamAttempters, cat,
+        assignees, isAssigned, platform,
       });
       clearLoading();
     } catch (e) {
@@ -413,11 +468,16 @@
   function renderResult(data) {
     const { owner, repo, number, issue, isBounty, isRewarded,
             attempts, openClaimPRs, botSubmissions, aiHits,
-            multiPRUsers, spamAttempters, cat } = data;
+            multiPRUsers, spamAttempters, cat,
+            assignees, isAssigned, platform } = data;
 
-    const emoji = cat === "low" ? "🟢" : cat === "medium" ? "🟡" : "🔴";
-    const label = cat === "low" ? "LOW SATURATION" :
-                  cat === "medium" ? "MEDIUM" : "HIGH SATURATION";
+    const emojiMap = { low: "🟢", medium: "🟡", high: "🔴", assigned: "🔵" };
+    const labelMap = {
+      low: "LOW SATURATION", medium: "MEDIUM",
+      high: "HIGH SATURATION", assigned: "ASSIGNED",
+    };
+    const emoji = emojiMap[cat];
+    const label = labelMap[cat];
 
     let html = "";
 
@@ -428,14 +488,34 @@
       html += '<div class="ai-warning"><strong>Already rewarded!</strong> The bounty on this issue has been paid out. Any further attempts are wasted.</div>';
     }
 
+    const platformLabel = platform === "algora" ? "Algora bounty" :
+                          platform === "polar" ? "Polar.sh bounty" :
+                          "GitHub issue";
+
     html += '<div class="score-card ' + cat + '">' +
       '<div class="score-emoji">' + emoji + '</div>' +
       '<div class="score-label ' + cat + '">' + label + '</div>' +
-      '<div class="score-rec">' + escapeHtml(recText(cat, attempts, openClaimPRs.length)) + '</div>' +
-      '<div style="margin-top:14px;">' +
+      '<div class="score-rec">' + escapeHtml(recText(cat, attempts, openClaimPRs.length)) + '</div>';
+
+    if (isAssigned) {
+      html += '<div class="assignee-block">Assigned to ' +
+        assignees.slice(0, 3).map((a) =>
+          '<img src="' + escapeHtml(a.avatar_url) + '" alt="" />' +
+          '<a href="' + escapeHtml(a.html_url) + '" target="_blank" rel="noopener">@' +
+          escapeHtml(a.login) + '</a>'
+        ).join(" &nbsp; ") +
+        (assignees.length > 3 ? " + " + (assignees.length - 3) + " more" : "") +
+        '</div>';
+    }
+
+    html += '<div style="margin-top:14px;">' +
       '<div class="issue-title">' + escapeHtml(issue.title) + '</div>' +
       '<div class="issue-meta">' + owner + "/" + repo + " #" + number + ' &middot; ' + escapeHtml(issue.state) + '</div>' +
-      '</div></div>';
+      '</div>' +
+      '<div class="platform-row">' +
+        '<span class="badge platform-' + platform + '">' + escapeHtml(platformLabel) + '</span>' +
+      '</div>' +
+      '</div>';
 
     if (aiHits > 0) {
       html += '<div class="ai-warning"><strong>AI-spam detected:</strong> ' +
